@@ -58,26 +58,18 @@ class RAID6():
 
     def append_parities(self, splits):
         parities = self.gf.matmul(self.gf.vander, splits)
-        return np.concatenate([parities, splits], axis=0)
+        return np.concatenate([splits, parities], axis=0)
 
 
     def retrieve(self):
-        splits = None
+        splits = []
 
-        with open(self.path+'/node0', 'rb') as f:
-            split = np.asarray(bytearray(f.read()))
-            split = split.reshape(1, len(split))
-            splits = split
-        i = 1
-        while i < self.k:
+        for i in range(self.k):
             with open(self.path+'/node{}'.format(i), 'rb') as f:
                 split = np.asarray(bytearray(f.read()))
                 split = split.reshape(1, len(split))
-                splits = np.concatenate([splits, split], axis=0)
-            i += 1
+                splits.append(split)
 
-        data = splits.flatten().tobytes()
+        data_arr = np.concatenate(splits, axis=0).flatten()
+        data = np.trim_zeros(data_arr, 'b').tobytes()
         return data
-
-
-

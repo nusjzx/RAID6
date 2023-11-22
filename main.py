@@ -9,3 +9,4 @@ if __name__ == "__main__":
         storage.write(data)
 
     result = storage.retrieve()
+    print(result)
