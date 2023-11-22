@@ -32,13 +32,15 @@ class RAID6():
         for i in range(k + m):
             Path(self.path+'/node{}'.format(i)).touch()
 
-    def write(self, data):
+    def write(self, name, data):
         data = bytearray(data)
-        splits = self.split_by_disk(data)
+        splits, stripe_num= self.split_by_disk(data)
+        self.obj_stripe_index[name] = [self.cur_stripe_index, stripe_num]
+        self.cur_stripe_index = self.cur_stripe_index + stripe_num
         splits = self.append_parities(splits)
 
         for i in range(len(splits)):
-            with open(self.path+'/node{}'.format(i), 'wb') as f:
+            with open(self.path+'/node{}'.format(i), 'ab') as f:
                 split_bytes = bytes(splits[i,:].tolist())
                 f.write(split_bytes)
                 f.flush()
@@ -53,7 +55,7 @@ class RAID6():
 
         data = np.asarray(data, dtype=int)
         splits = data.reshape(self.k, self.block_size * stripe_num)
-        return splits
+        return splits, stripe_num
 
 
     def append_parities(self, splits):
@@ -61,12 +63,15 @@ class RAID6():
         return np.concatenate([splits, parities], axis=0)
 
 
-    def retrieve(self):
+    def retrieve(self, name):
         splits = []
+
+        stripe_index, stripe_num = self.obj_stripe_index[name]
 
         for i in range(self.k):
             with open(self.path+'/node{}'.format(i), 'rb') as f:
-                split = np.asarray(bytearray(f.read()))
+                f.seek(stripe_index * self.block_size)
+                split = np.asarray(bytearray(f.read(stripe_num * self.block_size)))
                 split = split.reshape(1, len(split))
                 splits.append(split)
 

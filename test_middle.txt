@@ -1,0 +1,1 @@
+This is the MySQL Reference Manual. It documents MySQL 5.7 through 5.7.44, as well as NDB Cluster releases based on version 7.5 of NDB through 5.7.44-ndb-7.5.32, respectively. It may include documentation of features of MySQL versions that have not yet been released. For information about which versions have been released, see the MySQL 5.7 Release Notes.
