@@ -75,7 +75,7 @@ class RAID6():
         if os.path.exists(file_name):
             os.remove(file_name)
             print("block {} in Node {} failed".format(block_id, node_id))
-            return node_id, block_id
+            return block_id, node_id
         else:
             print("Node {} and block {} not found".format(block_id, node_id))
             return None
