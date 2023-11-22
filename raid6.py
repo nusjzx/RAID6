@@ -68,7 +68,31 @@ class RAID6():
         parities = self.gf.matmul(self.gf.vander, splits)
         return np.concatenate([splits, parities], axis=0)
 
+    
+    def fail_disk(self, node_id, block_id):
+        # introduce node and block failure by deleting the block file
+        file_name = os.path.join(self.path, 'node{}'.format(node_id), 'block{}'.format(block_id))
+        if os.path.exists(file_name):
+            os.remove(file_name)
+            print("block {} in Node {} failed".format(block_id, node_id))
+            return node_id, block_id
+        else:
+            print("Node {} and block {} not found".format(block_id, node_id))
+            return None
 
+    
+    def detect_failure(self):
+        # detect which node and block is corrupted
+        fail_ids = []
+        for node_id in range(self.k + self.m):
+            for block_id in range(self.cur_stripe_index):
+                file_name = os.path.join(self.path, 'node{}'.format(node_id), 'block{}'.format(block_id))
+                if not os.path.exists(file_name):
+                    print("Detected failure: block {} in Node {}".format(block_id, node_id))
+                    fail_ids.append((block_id, node_id))
+        return fail_ids
+
+    
     def retrieve(self, name):
         splits = []
         stripe_index, stripe_num = self.obj_stripe_index[name]
