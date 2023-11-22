@@ -77,7 +77,7 @@ class RAID6():
             print("block {} in Node {} failed".format(block_id, node_id))
             return block_id, node_id
         else:
-            print("Node {} and block {} not found".format(block_id, node_id))
+            print("block {} in Node {} not found".format(block_id, node_id))
             return None
 
     
