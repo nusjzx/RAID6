@@ -12,13 +12,13 @@ class GaloisField(object):
         field: GF(2^w), w=8
         primitive polynomial: x^8+x^4+x^3+x^2+1
         '''
-        self.num_data_disk = k
-        self.num_check_disk = m
+        self.k = k
+        self.m = m
         self.modulus = 0b100011101
         self.range = 1 << 8
         self.gflog = np.zeros((self.range,), dtype=int)
         self.gfilog = np.zeros((self.range,), dtype=int)
-        self.vander = np.zeros((self.num_check_disk, self.num_data_disk), dtype=int)
+        self.vander = np.zeros((self.m, self.k), dtype=int)
         self.log_table()
         self.vander_matrix()
 
@@ -36,8 +36,8 @@ class GaloisField(object):
     def vander_matrix(self):
         '''Set up the Vandermond matrix
         '''
-        for i in range(self.num_check_disk):
-            for j in range(self.num_data_disk):
+        for i in range(self.m):
+            for j in range(self.k):
                 self.vander[i][j] = self.power(j + 1, i)
 
     def add(self, a, b):

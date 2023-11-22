@@ -30,31 +30,37 @@ class RAID6():
 
         os.mkdir(self.path)
         for i in range(k + m):
-            Path(self.path+'/node{}'.format(i)).touch()
+            os.mkdir(self.path+'/node{}'.format(i))
 
     def write(self, name, data):
         data = bytearray(data)
-        splits, stripe_num= self.split_by_disk(data)
+        splits, stripe_num= self.split_by_block(data)
         self.obj_stripe_index[name] = [self.cur_stripe_index, stripe_num]
-        self.cur_stripe_index = self.cur_stripe_index + stripe_num
         splits = self.append_parities(splits)
 
-        for i in range(len(splits)):
-            with open(self.path+'/node{}'.format(i), 'ab') as f:
-                split_bytes = bytes(splits[i,:].tolist())
-                f.write(split_bytes)
-                f.flush()
-                os.fsync(f.fileno())
+        blocks = splits.reshape(self.k + self.m, stripe_num, self.block_size)
 
-    def split_by_disk(self, data):
+        for j in range(len(blocks[0])):
+            for i in range(len(blocks)):
+                stripe_i = self.cur_stripe_index + j
+                # for every stripe, we roll the stripe by m * stripe_i
+                roll_i = (i + stripe_i * self.m) % (self.k + self.m)
+                with open(self.path+'/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
+                    block_bytes = bytes(blocks[i,j].tolist())
+                    f.write(block_bytes)
+                    f.flush()
+                    os.fsync(f.fileno())
+        self.cur_stripe_index = self.cur_stripe_index + stripe_num
+
+    def split_by_block(self, data):
         data_size = len(data)
 
         stripe_num = math.ceil(data_size / self.stripe_size)
 
         data += b'\0' * (stripe_num * self.stripe_size - data_size)
 
-        data = np.asarray(data, dtype=int)
-        splits = data.reshape(self.k, self.block_size * stripe_num)
+        data = np.asarray(data, dtype=np.uint8)
+        splits = data.reshape(self.k, stripe_num * self.block_size)
         return splits, stripe_num
 
 
@@ -65,16 +71,18 @@ class RAID6():
 
     def retrieve(self, name):
         splits = []
-
         stripe_index, stripe_num = self.obj_stripe_index[name]
+        for i in range(self.k + self.m):
+            split = np.array([], dtype=np.uint8)
+            for j in range(stripe_num):
+                stripe_i = stripe_index + j
+                roll_i = (i + stripe_i * self.m) % (self.k + self.m)
+                with open(self.path + '/node{}'.format(roll_i)+ '/block{}'.format(stripe_i), 'rb') as f:
+                    block = np.asarray(bytearray(f.read()),dtype=np.uint8)
+                    split = np.concatenate([split, block])
+            split = split.reshape(1, len(split))
+            splits.append(split)
 
-        for i in range(self.k):
-            with open(self.path+'/node{}'.format(i), 'rb') as f:
-                f.seek(stripe_index * self.block_size)
-                split = np.asarray(bytearray(f.read(stripe_num * self.block_size)))
-                split = split.reshape(1, len(split))
-                splits.append(split)
-
-        data_arr = np.concatenate(splits, axis=0).flatten()
-        data = np.trim_zeros(data_arr, 'b').tobytes()
-        return data
+        data = np.concatenate(splits, axis=0)[:4,]
+        trimmed_data = np.trim_zeros(data.flatten(), 'b')
+        return trimmed_data.tobytes()
