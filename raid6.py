@@ -40,11 +40,12 @@ class RAID6():
 
         blocks = splits.reshape(self.k + self.m, stripe_num, self.block_size)
 
+
         for j in range(len(blocks[0])):
             for i in range(len(blocks)):
                 stripe_i = self.cur_stripe_index + j
-                # for every stripe, we roll the stripe by m * stripe_i
-                roll_i = (i + stripe_i * self.m) % (self.k + self.m)
+                # for every stripe, we roll the stripe by stripe_i
+                roll_i = (i - stripe_i) % (self.k + self.m)
                 with open(self.path+'/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
                     block_bytes = bytes(blocks[i,j].tolist())
                     f.write(block_bytes)
@@ -81,18 +82,40 @@ class RAID6():
             return None
 
     
-    def detect_failure(self):
-        # detect which node and block is corrupted
-        fail_ids = []
-        for node_id in range(self.k + self.m):
-            for block_id in range(self.cur_stripe_index):
-                file_name = os.path.join(self.path, 'node{}'.format(node_id), 'block{}'.format(block_id))
+    def handle_disk_failure(self):
+        # detect which node is corrupted
+        for stripe_i in range(self.cur_stripe_index):
+            normal_data = []
+            failed_i = []
+            for i in range(self.k + self.m):
+                roll_i = (i - stripe_i) % (self.k + self.m)
+                file_name = os.path.join(self.path, 'node{}'.format(roll_i), 'block{}'.format(stripe_i))
                 if not os.path.exists(file_name):
-                    print("Detected failure: block {} in Node {}".format(block_id, node_id))
-                    fail_ids.append((block_id, node_id))
-        return fail_ids
+                    print("Detected failure: block {} in Node {}".format(stripe_i, roll_i))
+                    failed_i.append(i)
+                else:
+                    with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'rb') as f:
+                        block = np.asarray(bytearray(f.read()), dtype=np.uint8)
+                        normal_data.append(block)
+            data_left = np.concatenate([normal_data], axis=0)
 
-    
+            generator = np.concatenate([np.identity(self.k, dtype=np.uint8), self.gf.vander], axis=0)
+            generator_left = np.delete(generator, obj=failed_i, axis=0)
+
+            data_result = self.gf.matmul(self.gf.inverse(generator_left), data_left)
+            parity_result = self.gf.matmul(self.gf.vander, data_result)
+
+            recovered_result = np.concatenate([data_result, parity_result], axis=0)
+
+            for i in failed_i:
+                roll_i = (i - stripe_i) % (self.k + self.m)
+                with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
+                    block_bytes = bytes(recovered_result[i].tolist())
+                    f.write(block_bytes)
+                    f.flush()
+                    os.fsync(f.fileno())
+        return
+
     def retrieve(self, name):
         splits = []
         stripe_index, stripe_num = self.obj_stripe_index[name]
@@ -100,7 +123,7 @@ class RAID6():
             split = np.array([], dtype=np.uint8)
             for j in range(stripe_num):
                 stripe_i = stripe_index + j
-                roll_i = (i + stripe_i * self.m) % (self.k + self.m)
+                roll_i = (i - stripe_i) % (self.k + self.m)
                 with open(self.path + '/node{}'.format(roll_i)+ '/block{}'.format(stripe_i), 'rb') as f:
                     block = np.asarray(bytearray(f.read()),dtype=np.uint8)
                     split = np.concatenate([split, block])
