@@ -1,12 +1,7 @@
 import numpy as np
 
-
-class GaloisField(object):
-    '''Galois Field module
-    A class that defines foundamental
-    mathematics in RAID6
-    '''
-
+### This class defines the Galois field that is used for the RAID-6 implementation ###
+class galoisfield(object):
     def __init__(self, k, m):
         '''inital setting
         field: GF(2^w), w=8
@@ -22,9 +17,10 @@ class GaloisField(object):
         self.log_table()
         self.vander_matrix()
 
+    ###
+    #   Set up the Look-up-Table for logarithms
+    ###
     def log_table(self):
-        '''Set up the look up logarithm table
-        '''
         b = 1
         for log in range(self.range - 1):
             self.gflog[b] = log
@@ -33,29 +29,33 @@ class GaloisField(object):
             if b & self.range:
                 b = b ^ self.modulus
 
+    ###
+    #   Set up the Vandermonte matrix to be used later for calculating the parities
+    ###
     def vander_matrix(self):
-        '''Set up the Vandermond matrix
-        '''
         for i in range(self.m):
             for j in range(self.k):
                 self.vander[i][j] = self.power(j + 1, i)
 
+    ###
+    #   Addition operation in Galois field is XOR
+    ###
     def add(self, a, b):
         '''Sum in Galosis Field
         '''
         sum = a ^ b
         return sum
 
+    ###
+    #   In this Galois field with characteristic of power of 2, addition and subtraction are the same 
+    ###
     def sub(self, a, b):
-        '''Subtraction in Galosis Field
-        '''
         return self.add(a, b)
 
+    ###
+    #   Multiplication operation in Galois field
+    ###
     def mult(self, a, b):
-        '''Multiplication in Galosis Field
-        :param a: multiplicand
-        :param b: multiplier
-        '''
         sum_log = 0
         if a == 0 or b == 0:
             return 0
@@ -64,11 +64,10 @@ class GaloisField(object):
             sum_log -= self.range - 1
         return self.gfilog[sum_log]
 
+    ###
+    #   Division in Galois field
+    ###
     def div(self, a, b):
-        '''Division in Galosis Field
-        :param a: dividend
-        :param b: divisor
-        '''
         diff_log = 0
         if a == 0:
             return 0
@@ -79,11 +78,10 @@ class GaloisField(object):
             diff_log += self.range - 1
         return self.gfilog[diff_log]
 
+    ###
+    #   Exponent in Galois field
+    ###
     def power(self, a, n):
-        '''Exponentiation in Galosis Field
-        :param a: base
-        :param n: exponent
-        '''
         n %= self.range - 1
         res = 1
         while True:
@@ -92,31 +90,29 @@ class GaloisField(object):
             n -= 1
             res = self.mult(a, res)
 
+    ###
+    #   Inner product
+    ###
     def dot(self, a, b):
-        '''Inner product of vector
-        :return: c
-        '''
         res = 0
         for i in range(len(a)):
             res = self.add(res, self.mult(a[i], b[i]))
         return res
 
+    ###
+    #   Matrix multiplication
+    ###
     def matmul(self, a, b):
-        '''Matrix multiplication
-        :return: mat res
-        '''
         res = np.zeros([a.shape[0], b.shape[1]], dtype=int)
         for i in range(res.shape[0]):
             for j in range(res.shape[1]):
                 res[i][j] = self.dot(a[i, :], b[:, j])
         return res
 
+    ###
+    #   Matrix inversion
+    ###
     def inverse(self, A):
-        """
-        cal the left inverse matrix of A
-        :param A: matrix
-        :return: A^-1
-        """
         if A.shape[0] != A.shape[1]:
             A_T = np.transpose(A)
             A_ = self.matmul(A_T, A)

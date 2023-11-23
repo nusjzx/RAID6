@@ -5,21 +5,16 @@ from pathlib import Path
 
 import numpy as np
 
-from GaloisField import GaloisField
+from galoisfield import galoisfield
 
-
+### Class for RAID-6 implementation ###
 class RAID6():
     def __init__(self, path, k, m, block_size):
-        '''
-
-        :param k: number of storage nodes
-        :param m: number of parity nodes
-        '''
         self.k = k
         self.m = m
         self.path = path
         self.block_size = block_size
-        self.gf = GaloisField(k=self.k, m=self.m)
+        self.gf = galoisfield(k=self.k, m=self.m)
         self.stripe_size = self.block_size * k
         self.cur_stripe_index = 0
         self.obj_stripe_index = {}
@@ -32,6 +27,10 @@ class RAID6():
         for i in range(k + m):
             os.mkdir(self.path+'/node{}'.format(i))
 
+    ###
+    #   Write a file to storage
+    #   This includes splitting into blocks, adding the parities in a rolling manner and striping across disks
+    ###
     def write(self, name, data):
         data = bytearray(data)
         splits, stripe_num= self.split_by_block(data)
@@ -39,7 +38,6 @@ class RAID6():
         splits = self.append_parities(splits)
 
         blocks = splits.reshape(self.k + self.m, stripe_num, self.block_size)
-
 
         for j in range(len(blocks[0])):
             for i in range(len(blocks)):
@@ -53,6 +51,9 @@ class RAID6():
                     os.fsync(f.fileno())
         self.cur_stripe_index = self.cur_stripe_index + stripe_num
 
+    ###
+    #   The input data is split into blocks and then striped across the nodes
+    ###
     def split_by_block(self, data):
         data_size = len(data)
 
@@ -64,12 +65,16 @@ class RAID6():
         splits = data.reshape(self.k, stripe_num * self.block_size)
         return splits, stripe_num
 
-
+    ###
+    #   The parities are generated using the Vandermonte matrix, with the operations done over the Galois field
+    ###
     def append_parities(self, splits):
         parities = self.gf.matmul(self.gf.vander, splits)
         return np.concatenate([splits, parities], axis=0)
 
-
+    ###
+    #   This function retrieves a file from storage and returns the data in bytes
+    ###
     def retrieve(self, name):
         splits = []
         stripe_index, stripe_num = self.obj_stripe_index[name]
@@ -88,7 +93,9 @@ class RAID6():
         trimmed_data = np.trim_zeros(data.flatten(), 'b')
         return trimmed_data.tobytes()
 
-    
+    ###
+    #   A node/disk failure is simulated by deleting the filder that represents it
+    ###
     def fail_node(self, node_id):
         # introduce node and block failure by deleting the block file
         node_path = os.path.join(self.path, 'node{}'.format(node_id))
@@ -101,7 +108,10 @@ class RAID6():
             print("Node {} not found".format(node_id))
             return None
 
-    
+    ###
+    #   Detect node failure and recreate the missing nodes
+    #   As this is a RAID-6 system, up to 2 failed nodes can be recovered using the Reed-Solomon correction code
+    ###
     def handle_disk_failure(self):
         for stripe_i in range(self.cur_stripe_index):
             normal_data = []
@@ -131,6 +141,7 @@ class RAID6():
 
             recovered_result = np.concatenate([data_result, parity_result], axis=0)
 
+            # Recreate failed node on disk
             for i in failed_i:
                 roll_i = (i - stripe_i) % (self.k + self.m)
                 with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
