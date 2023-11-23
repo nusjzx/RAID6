@@ -69,52 +69,6 @@ class RAID6():
         parities = self.gf.matmul(self.gf.vander, splits)
         return np.concatenate([splits, parities], axis=0)
 
-    
-    def fail_disk(self, node_id, block_id):
-        # introduce node and block failure by deleting the block file
-        file_name = os.path.join(self.path, 'node{}'.format(node_id), 'block{}'.format(block_id))
-        if os.path.exists(file_name):
-            os.remove(file_name)
-            print("block {} in Node {} failed".format(block_id, node_id))
-            return block_id, node_id
-        else:
-            print("block {} in Node {} not found".format(block_id, node_id))
-            return None
-
-    
-    def handle_disk_failure(self):
-        # detect which node is corrupted
-        for stripe_i in range(self.cur_stripe_index):
-            normal_data = []
-            failed_i = []
-            for i in range(self.k + self.m):
-                roll_i = (i - stripe_i) % (self.k + self.m)
-                file_name = os.path.join(self.path, 'node{}'.format(roll_i), 'block{}'.format(stripe_i))
-                if not os.path.exists(file_name):
-                    print("Detected failure: block {} in Node {}".format(stripe_i, roll_i))
-                    failed_i.append(i)
-                else:
-                    with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'rb') as f:
-                        block = np.asarray(bytearray(f.read()), dtype=np.uint8)
-                        normal_data.append(block)
-            data_left = np.concatenate([normal_data], axis=0)
-
-            generator = np.concatenate([np.identity(self.k, dtype=np.uint8), self.gf.vander], axis=0)
-            generator_left = np.delete(generator, obj=failed_i, axis=0)
-
-            data_result = self.gf.matmul(self.gf.inverse(generator_left), data_left)
-            parity_result = self.gf.matmul(self.gf.vander, data_result)
-
-            recovered_result = np.concatenate([data_result, parity_result], axis=0)
-
-            for i in failed_i:
-                roll_i = (i - stripe_i) % (self.k + self.m)
-                with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
-                    block_bytes = bytes(recovered_result[i].tolist())
-                    f.write(block_bytes)
-                    f.flush()
-                    os.fsync(f.fileno())
-        return
 
     def retrieve(self, name):
         splits = []
@@ -133,3 +87,55 @@ class RAID6():
         data = np.concatenate(splits, axis=0)[:self.k,]
         trimmed_data = np.trim_zeros(data.flatten(), 'b')
         return trimmed_data.tobytes()
+
+    
+    def fail_node(self, node_id):
+        # introduce node and block failure by deleting the block file
+        node_path = os.path.join(self.path, 'node{}'.format(node_id))
+        if os.path.exists(node_path):
+            shutil.rmtree(node_path)
+            os.mkdir(node_path)
+            print("Node {} failed".format(node_id))
+            return node_id
+        else:
+            print("Node {} not found".format(node_id))
+            return None
+
+    
+    def handle_disk_failure(self):
+        for stripe_i in range(self.cur_stripe_index):
+            normal_data = []
+            failed_i = []
+            # Check for missing data blocks (failures)
+            for i in range(self.k + self.m):
+                roll_i = (i - stripe_i) % (self.k + self.m)
+                file_name = os.path.join(self.path, 'node{}'.format(roll_i), 'block{}'.format(stripe_i))
+                if not os.path.exists(file_name):
+                    #print("Detected failure: block {} in Node {}".format(stripe_i, roll_i))
+                    failed_i.append(i)
+                else:
+                    with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'rb') as f:
+                        block = np.asarray(bytearray(f.read()), dtype=np.uint8)
+                        normal_data.append(block)
+            data_left = np.concatenate([normal_data], axis=0)
+
+            ### Recover lost node data ###
+            # Concatenate identity matrix with Vandermonte matrix
+            generator = np.concatenate([np.identity(self.k, dtype=np.uint8), self.gf.vander], axis=0)
+            # Remove the rows corresponding to failed nodes
+            generator_left = np.delete(generator, obj=failed_i, axis=0)
+
+            # Invert the square matrix to solve for the missing node data
+            data_result = self.gf.matmul(self.gf.inverse(generator_left), data_left)
+            parity_result = self.gf.matmul(self.gf.vander, data_result)
+
+            recovered_result = np.concatenate([data_result, parity_result], axis=0)
+
+            for i in failed_i:
+                roll_i = (i - stripe_i) % (self.k + self.m)
+                with open(self.path + '/node{}'.format(roll_i) + '/block{}'.format(stripe_i), 'wb') as f:
+                    block_bytes = bytes(recovered_result[i].tolist())
+                    f.write(block_bytes)
+                    f.flush()
+                    os.fsync(f.fileno())
+        return
