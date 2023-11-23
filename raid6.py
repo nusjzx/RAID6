@@ -107,6 +107,6 @@ class RAID6():
             split = split.reshape(1, len(split))
             splits.append(split)
 
-        data = np.concatenate(splits, axis=0)[:4,]
+        data = np.concatenate(splits, axis=0)[:self.k,]
         trimmed_data = np.trim_zeros(data.flatten(), 'b')
         return trimmed_data.tobytes()
